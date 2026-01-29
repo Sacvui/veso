@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🎟️ Dò Vé Số - Ứng dụng dò vé số tự động
 
-## Getting Started
+Ứng dụng web giúp người dùng dò vé số tự động bằng cách chụp ảnh hoặc nhập số thủ công.
 
-First, run the development server:
+## ✨ Tính năng
+
+- 📸 **Chụp/Upload ảnh vé số** - Hỗ trợ camera trên điện thoại
+- 🔍 **OCR nhận diện tự động** - Sử dụng Tesseract.js để đọc số từ ảnh
+- 🎯 **Dò tất cả các đài** - Miền Bắc, Miền Trung, Miền Nam
+- 💾 **Lưu trữ vé số** - Lưu vào localStorage, không cần đăng ký
+- 📊 **Xem kết quả xổ số** - Tra cứu kết quả theo ngày
+- 🏆 **Hiển thị chi tiết trúng thưởng** - Số tiền, giải thưởng, đài xổ
+
+## 🚀 Cài đặt
 
 ```bash
+# Clone repository
+git clone https://github.com/hailp1/veso2.git
+cd veso2
+
+# Cài đặt dependencies
+npm install
+
+# Chạy development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# Build production
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mở [http://localhost:3000](http://localhost:3000) để sử dụng.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 🛠️ Công nghệ sử dụng
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Framework**: Next.js 15 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **OCR**: Tesseract.js
+- **Icons**: Lucide React
 
-## Learn More
+## 📁 Cấu trúc thư mục
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+├── app/
+│   ├── api/lottery/       # API route lấy kết quả xổ số
+│   ├── globals.css        # Global styles
+│   ├── layout.tsx         # Root layout
+│   └── page.tsx           # Trang chính
+├── components/
+│   ├── ImageUploader.tsx  # Component upload/chụp ảnh
+│   ├── TicketForm.tsx     # Form nhập số vé
+│   ├── ResultsDisplay.tsx # Hiển thị kết quả dò
+│   ├── SavedTickets.tsx   # Danh sách vé đã lưu
+│   └── TodayResults.tsx   # Kết quả xổ số hôm nay
+├── hooks/
+│   ├── useOCR.ts          # Hook xử lý OCR
+│   └── useTicketStorage.ts # Hook lưu trữ vé
+└── lib/
+    └── lottery.ts         # Logic xổ số & dữ liệu đài
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🎰 Hướng dẫn sử dụng
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. **Chụp ảnh vé số** hoặc upload từ thư viện
+2. Hệ thống tự động **nhận diện các dãy số** trên vé
+3. Chọn **ngày xổ** và **đài xổ** (hoặc để trống để dò tất cả đài)
+4. Nhấn **"Dò Số Ngay"** để kiểm tra kết quả
+5. Xem kết quả trúng thưởng và số tiền
 
-## Deploy on Vercel
+## 📝 Lưu ý
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- Ứng dụng chỉ mang tính chất tham khảo
+- Vui lòng đối chiếu với kết quả chính thức từ đài xổ số
+- Dữ liệu được lưu trên trình duyệt (localStorage)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📄 License
+
+MIT License
+
+## 👨‍💻 Tác giả
+
+- [hailp1](https://github.com/hailp1)

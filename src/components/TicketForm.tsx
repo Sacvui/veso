@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import { provinces } from '@/lib/lottery';
 
@@ -18,12 +18,12 @@ export function TicketForm({ initialNumbers = [], onSubmit, isLoading }: TicketF
     const [province, setProvince] = useState('');
     const [numbers, setNumbers] = useState(initialNumbers.join('\n'));
 
-    // Update numbers when initialNumbers changes
-    useState(() => {
+    // Update numbers when initialNumbers changes (from OCR)
+    useEffect(() => {
         if (initialNumbers.length > 0) {
             setNumbers(initialNumbers.join('\n'));
         }
-    });
+    }, [initialNumbers]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
