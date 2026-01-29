@@ -17,11 +17,26 @@ export function TodayResults() {
     const [results, setResults] = useState<Record<string, LotteryResult>>({});
     const [isLoading, setIsLoading] = useState(true);
 
+    // Check if date is in the future
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const compareDate = new Date(currentDate);
+    compareDate.setHours(0, 0, 0, 0);
+    const isFutureDate = compareDate > today;
+    const isToday = compareDate.getTime() === today.getTime();
+
     useEffect(() => {
         loadResults();
     }, [currentDate, region]);
 
     const loadResults = async () => {
+        // Don't load results for future dates
+        if (isFutureDate) {
+            setResults({});
+            setIsLoading(false);
+            return;
+        }
+
         setIsLoading(true);
         try {
             const data = await fetchLotteryResults(currentDate, region);
@@ -35,6 +50,8 @@ export function TodayResults() {
     const changeDate = (delta: number) => {
         const newDate = new Date(currentDate);
         newDate.setDate(newDate.getDate() + delta);
+        // Don't allow going to future dates
+        if (delta > 0 && newDate > today) return;
         setCurrentDate(newDate);
     };
 
@@ -76,8 +93,8 @@ export function TodayResults() {
                         key={r}
                         onClick={() => setRegion(r)}
                         className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition ${region === r
-                                ? 'btn-primary text-white'
-                                : 'text-white/60 hover:text-white'
+                            ? 'btn-primary text-white'
+                            : 'text-white/60 hover:text-white'
                             }`}
                     >
                         {r === 'nam' ? 'Miền Nam' : r === 'trung' ? 'Miền Trung' : 'Miền Bắc'}
@@ -115,8 +132,8 @@ export function TodayResults() {
                                                     <span
                                                         key={i}
                                                         className={`font-mono px-2 py-0.5 rounded ${p === 'DB'
-                                                                ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-lg'
-                                                                : 'bg-white/10'
+                                                            ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-lg'
+                                                            : 'bg-white/10'
                                                             }`}
                                                     >
                                                         {num}
