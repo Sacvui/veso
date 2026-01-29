@@ -4,8 +4,14 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 import { Camera, Upload, X, Loader2, SwitchCamera, ZoomIn, FlashlightOff, Flashlight } from 'lucide-react';
 import { useOCR } from '@/hooks/useOCR';
 
+interface OCRDetectionResult {
+    numbers: string[];
+    date?: string;
+    province?: string;
+}
+
 interface ImageUploaderProps {
-    onNumbersDetected: (numbers: string[]) => void;
+    onNumbersDetected: (result: OCRDetectionResult) => void;
 }
 
 export function ImageUploader({ onNumbersDetected }: ImageUploaderProps) {
@@ -43,7 +49,11 @@ export function ImageUploader({ onNumbersDetected }: ImageUploaderProps) {
 
         const result = await processImage(file);
         if (result && result.numbers.length > 0) {
-            onNumbersDetected(result.numbers);
+            onNumbersDetected({
+                numbers: result.numbers,
+                date: result.date,
+                province: result.province,
+            });
         }
     }, [processImage, onNumbersDetected]);
 
@@ -152,7 +162,11 @@ export function ImageUploader({ onNumbersDetected }: ImageUploaderProps) {
         // Process with OCR
         const result = await processImage(imageData);
         if (result && result.numbers.length > 0) {
-            onNumbersDetected(result.numbers);
+            onNumbersDetected({
+                numbers: result.numbers,
+                date: result.date,
+                province: result.province,
+            });
         }
     };
 
@@ -252,8 +266,8 @@ export function ImageUploader({ onNumbersDetected }: ImageUploaderProps) {
                     {/* Upload Area */}
                     <div
                         className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${isDragging
-                                ? 'border-purple-500 bg-purple-500/10'
-                                : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+                            ? 'border-purple-500 bg-purple-500/10'
+                            : 'border-white/20 hover:border-white/40 hover:bg-white/5'
                             }`}
                         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                         onDragLeave={() => setIsDragging(false)}

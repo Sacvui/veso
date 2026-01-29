@@ -106,72 +106,139 @@ export function useOCR() {
 
     // Extract lottery-specific patterns from text
     const extractLotteryInfo = (text: string): { numbers: string[]; province?: string; date?: string } => {
+        // Keep original text for province/date detection (before number normalization)
+        const originalText = text;
+
         // Character corrections for common OCR mistakes on lottery fonts
         let normalized = text
             .replace(/[oOоО]/g, '0')  // Latin and Cyrillic O
             .replace(/[lIіІ|]/g, '1') // l, I, pipe
             .replace(/[zZ]/g, '2')
-            .replace(/[eE]/g, '6')    // Sometimes 6 looks like e
             .replace(/[sS\$]/g, '5')
             .replace(/[bB]/g, '8')
             .replace(/[gG]/g, '9')
             .replace(/[,\.]/g, '')    // Remove punctuation between numbers
             .replace(/\s+/g, ' ');    // Normalize spaces
 
-        // Extract 2-6 digit numbers (lottery numbers)
-        const numberMatches = normalized.match(/\b\d{2,6}\b/g) || [];
+        // PRIORITY 1: Look for 6-digit lottery ticket numbers (main ticket number)
+        // Common patterns on lottery tickets: L889246, L 889246, Số: 889246
+        const sixDigitPatterns = [
+            /[LlІ1]\s*(\d{6})/g,           // L889246 or L 889246
+            /s[ốo]\s*:?\s*(\d{6})/gi,      // Số: 889246 or so 889246
+            /v[éeè]\s*s[ốo]\s*:?\s*(\d{6})/gi,  // vé số: 889246
+            /(\d{6})/g,                      // plain 6-digit numbers
+        ];
 
-        // Also try to find numbers that might be split by spaces
-        const spacedNumbers = normalized.match(/\d[\d\s]{4,8}\d/g) || [];
-        const cleanedSpaced = spacedNumbers.map(n => n.replace(/\s/g, '')).filter(n => n.length >= 2 && n.length <= 6);
+        const sixDigitNumbers: string[] = [];
+        for (const pattern of sixDigitPatterns) {
+            let match;
+            while ((match = pattern.exec(normalized)) !== null) {
+                const num = match[1] || match[0];
+                if (num.length === 6 && /^\d{6}$/.test(num)) {
+                    sixDigitNumbers.push(num);
+                }
+            }
+        }
 
-        const allNumbers = [...numberMatches, ...cleanedSpaced];
-        const numbers = [...new Set(allNumbers.filter(n => n.length >= 2 && n.length <= 6))];
+        // PRIORITY 2: Extract other numbers (2-5 digits) for prize checking
+        const otherNumberMatches = normalized.match(/\b\d{2,5}\b/g) || [];
 
-        // Extract date patterns
+        // Also try to find numbers that might be split by spaces (e.g., "88 92 46" -> "889246")
+        const spacedNumbers = normalized.match(/\d[\d\s]{4,10}\d/g) || [];
+        const cleanedSpaced = spacedNumbers
+            .map(n => n.replace(/\s/g, ''))
+            .filter(n => n.length === 6 && /^\d{6}$/.test(n));
+
+        // Combine all 6-digit numbers (highest priority)
+        const allSixDigit = [...new Set([...sixDigitNumbers, ...cleanedSpaced])];
+
+        // Then add other numbers
+        const otherNumbers = [...new Set(otherNumberMatches.filter(n => n.length >= 2 && n.length <= 5))];
+
+        // 6-digit numbers first, then others
+        const numbers = [...allSixDigit, ...otherNumbers];
+
+        // Extract date patterns (more comprehensive)
         const datePatterns = [
-            /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/,  // DD/MM/YYYY
-            /ngày\s*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
-            /(\d{1,2})\s*tháng\s*(\d{1,2})\s*năm\s*(\d{2,4})/i,
+            // Standard formats
+            /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/,  // DD/MM/YYYY or DD-MM-YYYY
+            /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/,      // DD/MM/YY
+            // Vietnamese text formats
+            /ng[àa]y\s*(\d{1,2})[\/\-\.\s]+(\d{1,2})[\/\-\.\s]+(\d{2,4})/i,
+            /ng[àa]y\s*(\d{1,2})\s*th[áa]ng\s*(\d{1,2})\s*n[aă]m\s*(\d{2,4})/i,
+            /(\d{1,2})\s*th[áa]ng\s*(\d{1,2})\s*n[aă]m\s*(\d{2,4})/i,
+            // Lottery ticket specific: "Mở thưởng: 05-01-2026" or "XSDT 05/01/2026"
+            /m[ởo]\s*th[ưu][ởo]ng\s*:?\s*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
+            /xs\w+\s*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
+            // "thứ hai 05-01-2026"
+            /th[ứu]\s*\w+\s*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
         ];
 
         let date: string | undefined;
         for (const pattern of datePatterns) {
-            const match = text.match(pattern);
+            const match = originalText.match(pattern);
             if (match) {
                 const [, d, m, y] = match;
-                const year = y.length === 2 ? `20${y}` : y;
-                date = `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${year}`;
+                let year = y;
+                if (y.length === 2) {
+                    year = parseInt(y) > 50 ? `19${y}` : `20${y}`;
+                }
+                const day = d.padStart(2, '0');
+                const month = m.padStart(2, '0');
+                // Return in YYYY-MM-DD format for HTML date input
+                date = `${year}-${month}-${day}`;
                 break;
             }
         }
 
-        // Extract province from text
+        // Extract province from text (comprehensive list of all Vietnamese lottery provinces)
         const provincePatterns: Record<string, RegExp> = {
-            'tphcm': /h[ồô]\s*ch[íi]\s*minh|tp\.?hcm|s[àa]i\s*g[òo]n|hcm/i,
-            'dong-nai': /[đd][ồo]ng\s*nai/i,
-            'binh-duong': /b[ìi]nh\s*d[ươ][oơ]ng/i,
-            'vung-tau': /v[ũu]ng\s*t[àa]u|b[àa]\s*r[ịi]a/i,
-            'can-tho': /c[ầa]n\s*th[ơo]/i,
-            'da-nang': /[đd][àa]\s*n[ẵa]ng/i,
-            'mien-bac': /mi[ềe]n\s*b[ắa]c|h[àa]\s*n[ộo]i/i,
-            'tien-giang': /ti[ềe]n\s*giang/i,
-            'ben-tre': /b[ếe]n\s*tre/i,
-            'long-an': /long\s*an/i,
-            'dong-thap': /[đd][ồo]ng\s*th[áa]p/i,
-            'ca-mau': /c[àa]\s*mau/i,
-            'an-giang': /an\s*giang/i,
-            'kien-giang': /ki[êe]n\s*giang/i,
-            'vinh-long': /v[ĩi]nh\s*long/i,
-            'tra-vinh': /tr[àa]\s*vinh/i,
-            'bac-lieu': /b[ạa]c\s*li[êe]u/i,
-            'soc-trang': /s[óo]c\s*tr[ăa]ng/i,
-            'hau-giang': /h[ậa]u\s*giang/i,
+            // MIỀN BẮC
+            'mien-bac': /mi[ềe]n\s*b[ắa]c|xsmb|h[àa]\s*n[ộo]i|mb/i,
+
+            // MIỀN TRUNG
+            'thua-thien-hue': /th[ừu]a?\s*thi[êe]n\s*hu[ếe]|hu[ếe]|xshue/i,
+            'phu-yen': /ph[úu]\s*y[êe]n|xspy/i,
+            'dak-lak': /[đd][ắa]k\s*l[ắa]k|daklak|xsdlk/i,
+            'quang-nam': /qu[ảa]ng\s*nam|xsqna/i,
+            'da-nang': /[đd][àa]\s*n[ẵa]ng|danang|xsdng/i,
+            'khanh-hoa': /kh[áa]nh\s*h[oò]a|nha\s*trang|xskh/i,
+            'binh-dinh': /b[ìi]nh\s*[đd][ịi]nh|xsbdi/i,
+            'quang-tri': /qu[ảa]ng\s*tr[ịi]|xsqt/i,
+            'quang-binh': /qu[ảa]ng\s*b[ìi]nh|xsqb/i,
+            'gia-lai': /gia\s*lai|xsgl/i,
+            'ninh-thuan': /ninh\s*thu[ậa]n|xsnt/i,
+            'quang-ngai': /qu[ảa]ng\s*ng[ãa]i|xsqng/i,
+            'dak-nong': /[đd][ắa]k\s*n[ôo]ng|xsdno/i,
+            'kon-tum': /kon\s*tum|xskt/i,
+
+            // MIỀN NAM
+            'tphcm': /h[ồô]\s*ch[íi]\s*minh|tp\.?\s*hcm|s[àa]i\s*g[òo]n|hcm|xshcm/i,
+            'dong-thap': /[đd][ồo]ng\s*th[áa]p|xsdt/i,
+            'ca-mau': /c[àa]\s*mau|xscm/i,
+            'ben-tre': /b[ếe]n\s*tre|xsbt/i,
+            'vung-tau': /v[ũu]ng\s*t[àa]u|b[àa]\s*r[ịi]a|xsvt/i,
+            'bac-lieu': /b[ạa]c\s*li[êe]u|xsbl/i,
+            'dong-nai': /[đd][ồo]ng\s*nai|xsdn/i,
+            'can-tho': /c[ầa]n\s*th[ơo]|xsct/i,
+            'soc-trang': /s[óo]c\s*tr[ăa]ng|xsst/i,
+            'tay-ninh': /t[âa]y\s*ninh|xstn/i,
+            'an-giang': /an\s*giang|xsag/i,
+            'binh-thuan': /b[ìi]nh\s*thu[ậa]n|phan\s*thi[ếe]t|xsbth/i,
+            'vinh-long': /v[ĩi]nh\s*long|xsvl/i,
+            'binh-duong': /b[ìi]nh\s*d[ươ][ơo]ng|xsbd/i,
+            'tra-vinh': /tr[àa]\s*vinh|xstv/i,
+            'long-an': /long\s*an|xsla/i,
+            'binh-phuoc': /b[ìi]nh\s*ph[ướu][ớo]c|xsbp/i,
+            'hau-giang': /h[ậa]u\s*giang|xshg/i,
+            'tien-giang': /ti[ềe]n\s*giang|xstg/i,
+            'kien-giang': /ki[êe]n\s*giang|r[ạa]ch\s*gi[áa]|xskg/i,
+            'da-lat': /[đd][àa]\s*l[ạa]t|l[âa]m\s*[đd][ồo]ng|xsdl/i,
         };
 
         let province: string | undefined;
         for (const [key, pattern] of Object.entries(provincePatterns)) {
-            if (pattern.test(text)) {
+            if (pattern.test(originalText)) {
                 province = key;
                 break;
             }

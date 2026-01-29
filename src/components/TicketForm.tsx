@@ -6,16 +6,19 @@ import { provinces } from '@/lib/lottery';
 
 interface TicketFormProps {
     initialNumbers?: string[];
+    initialDate?: string;
+    initialProvince?: string;
     onSubmit: (data: { date: string; province: string; numbers: string[] }) => Promise<void>;
     isLoading?: boolean;
 }
 
-export function TicketForm({ initialNumbers = [], onSubmit, isLoading }: TicketFormProps) {
+export function TicketForm({ initialNumbers = [], initialDate, initialProvince, onSubmit, isLoading }: TicketFormProps) {
     const [date, setDate] = useState(() => {
+        if (initialDate) return initialDate;
         const today = new Date();
         return today.toISOString().split('T')[0];
     });
-    const [province, setProvince] = useState('');
+    const [province, setProvince] = useState(initialProvince || '');
     const [numbers, setNumbers] = useState(initialNumbers.join('\n'));
 
     // Update numbers when initialNumbers changes (from OCR)
@@ -24,6 +27,20 @@ export function TicketForm({ initialNumbers = [], onSubmit, isLoading }: TicketF
             setNumbers(initialNumbers.join('\n'));
         }
     }, [initialNumbers]);
+
+    // Update date when initialDate changes (from OCR)
+    useEffect(() => {
+        if (initialDate) {
+            setDate(initialDate);
+        }
+    }, [initialDate]);
+
+    // Update province when initialProvince changes (from OCR)
+    useEffect(() => {
+        if (initialProvince) {
+            setProvince(initialProvince);
+        }
+    }, [initialProvince]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

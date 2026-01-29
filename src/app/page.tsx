@@ -14,14 +14,28 @@ interface CheckResult {
   winnings: WinningResult[];
 }
 
+interface OCRDetectionResult {
+  numbers: string[];
+  date?: string;
+  province?: string;
+}
+
 export default function Home() {
   const [detectedNumbers, setDetectedNumbers] = useState<string[]>([]);
+  const [detectedDate, setDetectedDate] = useState<string | undefined>();
+  const [detectedProvince, setDetectedProvince] = useState<string | undefined>();
   const [checkResults, setCheckResults] = useState<CheckResult[] | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const { tickets, addTicket, removeTicket, isLoaded } = useTicketStorage();
 
-  const handleNumbersDetected = (numbers: string[]) => {
-    setDetectedNumbers(numbers);
+  const handleNumbersDetected = (result: OCRDetectionResult) => {
+    setDetectedNumbers(result.numbers);
+    if (result.date) {
+      setDetectedDate(result.date);
+    }
+    if (result.province) {
+      setDetectedProvince(result.province);
+    }
   };
 
   const handleCheckNumbers = async (data: { date: string; province: string; numbers: string[] }) => {
@@ -75,6 +89,8 @@ export default function Home() {
         {/* Ticket Form */}
         <TicketForm
           initialNumbers={detectedNumbers}
+          initialDate={detectedDate}
+          initialProvince={detectedProvince}
           onSubmit={handleCheckNumbers}
           isLoading={isChecking}
         />
