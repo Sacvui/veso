@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Real lottery data API
+// Real lottery data API - fetches from multiple Vietnamese lottery sources
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || formatToday();
@@ -8,11 +8,11 @@ export async function GET(request: NextRequest) {
 
     try {
         const results = await fetchRealLotteryData(date, region);
-        return NextResponse.json({ success: true, data: results, date });
+        return NextResponse.json({ success: true, data: results, date, source: 'real' });
     } catch (error) {
         console.error('Failed to fetch lottery results:', error);
         return NextResponse.json(
-            { success: false, error: 'Failed to fetch results', details: String(error) },
+            { success: false, error: 'Failed to fetch results' },
             { status: 500 }
         );
     }
@@ -23,132 +23,105 @@ function formatToday(): string {
     return `${d.getDate().toString().padStart(2, '0')}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getFullYear()}`;
 }
 
-// Province mapping
-const provinces: Record<string, { name: string; region: string; code: string }> = {
-    'mien-bac': { name: 'Miền Bắc', region: 'bac', code: 'xsmb' },
-    'tphcm': { name: 'TP.HCM', region: 'nam', code: 'xshcm' },
-    'dong-thap': { name: 'Đồng Tháp', region: 'nam', code: 'xsdt' },
-    'ca-mau': { name: 'Cà Mau', region: 'nam', code: 'xscm' },
-    'ben-tre': { name: 'Bến Tre', region: 'nam', code: 'xsbt' },
-    'vung-tau': { name: 'Vũng Tàu', region: 'nam', code: 'xsvt' },
-    'dong-nai': { name: 'Đồng Nai', region: 'nam', code: 'xsdn' },
-    'can-tho': { name: 'Cần Thơ', region: 'nam', code: 'xsct' },
-    'da-nang': { name: 'Đà Nẵng', region: 'trung', code: 'xsdng' },
-    'khanh-hoa': { name: 'Khánh Hòa', region: 'trung', code: 'xskh' },
-};
-
 async function fetchRealLotteryData(dateStr: string, region: string) {
     const [day, month, year] = dateStr.split('-');
-    const results: Record<string, any> = {};
+    const proxyUrl = 'https://api.allorigins.win/raw?url=';
 
-    // Try fetching from xoso.me
+    // Try multiple sources in order of reliability
+
+    // Source 1: minhngoc.net.vn (fastest, most popular)
+    try {
+        const regionPath = region === 'bac' ? 'mien-bac' : region === 'trung' ? 'mien-trung' : 'mien-nam';
+        const url = `https://www.minhngoc.net.vn/ket-qua-xo-so/${regionPath}/${day}-${month}-${year}.html`;
+        const response = await fetch(proxyUrl + encodeURIComponent(url));
+
+        if (response.ok) {
+            const html = await response.text();
+            const parsed = parseHTML(html, dateStr, region);
+            if (Object.keys(parsed).length > 0) return parsed;
+        }
+    } catch (e) { console.log('minhngoc failed'); }
+
+    // Source 2: kqxs.vn
+    try {
+        const regionPath = region === 'bac' ? 'mien-bac' : region === 'trung' ? 'mien-trung' : 'mien-nam';
+        const url = `https://kqxs.vn/xo-so-${regionPath}/${day}-${month}-${year}`;
+        const response = await fetch(proxyUrl + encodeURIComponent(url));
+
+        if (response.ok) {
+            const html = await response.text();
+            const parsed = parseHTML(html, dateStr, region);
+            if (Object.keys(parsed).length > 0) return parsed;
+        }
+    } catch (e) { console.log('kqxs.vn failed'); }
+
+    // Source 3: xoso.me
     try {
         const url = `https://xoso.me/xskt/ngay-${day}-${month}-${year}.html`;
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-
-        const response = await fetch(proxyUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-        });
+        const response = await fetch(proxyUrl + encodeURIComponent(url));
 
         if (response.ok) {
             const html = await response.text();
-            const parsed = parseXoSoMeHTML(html, dateStr, region);
-            if (Object.keys(parsed).length > 0) {
-                return parsed;
-            }
+            const parsed = parseHTML(html, dateStr, region);
+            if (Object.keys(parsed).length > 0) return parsed;
         }
-    } catch (e) {
-        console.log('xoso.me failed:', e);
-    }
+    } catch (e) { console.log('xoso.me failed'); }
 
-    // Try fetching from ketqua.net
+    // Source 4: xoso.com.vn
     try {
-        const url = `https://ketqua.net/xo-so-mien-nam-${day}-${month}-${year}.html`;
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const url = `https://xoso.com.vn/xsmn-${day}-${month}-${year}.html`;
+        const response = await fetch(proxyUrl + encodeURIComponent(url));
 
-        const response = await fetch(proxyUrl);
         if (response.ok) {
             const html = await response.text();
-            const parsed = parseKetQuaHTML(html, dateStr, region);
-            if (Object.keys(parsed).length > 0) {
-                return parsed;
-            }
+            const parsed = parseHTML(html, dateStr, region);
+            if (Object.keys(parsed).length > 0) return parsed;
         }
-    } catch (e) {
-        console.log('ketqua.net failed:', e);
-    }
+    } catch (e) { console.log('xoso.com.vn failed'); }
 
-    return results;
+    return {};
 }
 
-function parseXoSoMeHTML(html: string, dateStr: string, region: string) {
+// Generic HTML parser - extracts lottery numbers from any source
+function parseHTML(html: string, dateStr: string, region: string) {
     const results: Record<string, any> = {};
 
-    // Extract all 6-digit numbers (potential special prizes)
-    const specialPrizes = html.match(/\b\d{6}\b/g) || [];
-    // Extract all 5-digit numbers
-    const fiveDigits = html.match(/\b\d{5}\b/g) || [];
-    // Extract all 4-digit numbers
-    const fourDigits = html.match(/\b\d{4}\b/g) || [];
-    // Extract all 3-digit numbers  
-    const threeDigits = html.match(/\b\d{3}\b/g) || [];
-    // Extract all 2-digit numbers
-    const twoDigits = html.match(/\b\d{2}\b/g) || [];
+    // Extract all numbers from HTML
+    const allMatches = html.match(/>\s*(\d{2,6})\s*</g) || [];
+    const numbers = allMatches
+        .map(n => n.replace(/[><\s]/g, ''))
+        .filter(n => n.length >= 2 && n.length <= 6);
 
-    // Filter unique numbers
-    const uniqueSpecial = [...new Set(specialPrizes)];
-    const uniqueFive = [...new Set(fiveDigits)];
-    const uniqueFour = [...new Set(fourDigits)];
-    const uniqueThree = [...new Set(threeDigits)];
-    const uniqueTwo = [...new Set(twoDigits)];
+    const unique = [...new Set(numbers)];
 
-    // Check for Miền Nam results
-    if (!region || region === 'nam') {
-        if (uniqueSpecial.length > 0) {
-            results['mien-nam'] = {
-                name: 'Miền Nam',
-                region: 'nam',
-                date: dateStr,
-                prizes: {
-                    'DB': uniqueSpecial.slice(0, 3),
-                    'G1': uniqueFive.slice(0, 3),
-                    'G2': uniqueFive.slice(3, 6),
-                    'G3': uniqueFive.slice(6, 12),
-                    'G4': uniqueFive.slice(12, 33),
-                    'G5': uniqueFour.slice(0, 3),
-                    'G6': uniqueFour.slice(3, 12),
-                    'G7': uniqueThree.slice(0, 3),
-                    'G8': uniqueTwo.slice(0, 3),
-                },
-            };
-        }
-    }
+    if (unique.length >= 15) {
+        // Categorize by digit length
+        const six = unique.filter(n => n.length === 6);
+        const five = unique.filter(n => n.length === 5);
+        const four = unique.filter(n => n.length === 4);
+        const three = unique.filter(n => n.length === 3);
+        const two = unique.filter(n => n.length === 2);
 
-    // Check for Miền Bắc results
-    if (!region || region === 'bac') {
-        if (uniqueSpecial.length > 0 || uniqueFive.length > 10) {
-            results['mien-bac'] = {
-                name: 'Miền Bắc',
-                region: 'bac',
-                date: dateStr,
-                prizes: {
-                    'DB': uniqueSpecial.slice(0, 1).length > 0 ? uniqueSpecial.slice(0, 1) : uniqueFive.slice(0, 1),
-                    'G1': uniqueFive.slice(1, 2),
-                    'G2': uniqueFive.slice(2, 4),
-                    'G3': uniqueFive.slice(4, 10),
-                    'G4': uniqueFour.slice(0, 4),
-                    'G5': uniqueFour.slice(4, 10),
-                    'G6': uniqueThree.slice(0, 3),
-                    'G7': uniqueTwo.slice(0, 4),
-                },
-            };
-        }
+        const regionKey = region === 'bac' ? 'mien-bac' : region === 'trung' ? 'mien-trung' : 'mien-nam';
+        const regionName = region === 'bac' ? 'Miền Bắc' : region === 'trung' ? 'Miền Trung' : 'Miền Nam';
+
+        results[regionKey] = {
+            name: regionName,
+            region: region || 'nam',
+            date: dateStr,
+            prizes: {
+                'DB': six.length > 0 ? six.slice(0, 1) : five.slice(0, 1),
+                'G1': five.slice(0, 1),
+                'G2': five.slice(1, 2),
+                'G3': five.slice(2, 4),
+                'G4': five.slice(4, 11),
+                'G5': four.slice(0, 1),
+                'G6': four.slice(1, 4),
+                'G7': three.slice(0, 1),
+                'G8': two.slice(0, 1),
+            },
+        };
     }
 
     return results;
-}
-
-function parseKetQuaHTML(html: string, dateStr: string, region: string) {
-    // Similar parsing logic
-    return parseXoSoMeHTML(html, dateStr, region);
 }
