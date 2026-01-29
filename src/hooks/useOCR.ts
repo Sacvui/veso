@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { createWorker } from 'tesseract.js';
+import { createWorker, PSM } from 'tesseract.js';
 
 interface OCRResult {
     text: string;
@@ -16,10 +16,11 @@ export function useOCR() {
     const [progress, setProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
 
-    // Pre-process image for better OCR results
+    // Enhanced image preprocessing for lottery tickets
     const preprocessImage = async (imageSource: string): Promise<string> => {
         return new Promise((resolve) => {
             const img = new Image();
+            img.crossOrigin = 'anonymous';
             img.onload = () => {
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
@@ -28,97 +29,152 @@ export function useOCR() {
                     return;
                 }
 
-                canvas.width = img.width;
-                canvas.height = img.height;
+                // Scale up small images for better OCR
+                const scale = img.width < 1000 ? 2 : 1;
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
 
-                // Draw original image
-                ctx.drawImage(img, 0, 0);
+                // Enable image smoothing for scaling
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
                 // Get image data
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 const data = imageData.data;
 
-                // Apply image processing for better OCR
+                // Step 1: Convert to grayscale
                 for (let i = 0; i < data.length; i += 4) {
-                    const r = data[i];
-                    const g = data[i + 1];
-                    const b = data[i + 2];
+                    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                    data[i] = data[i + 1] = data[i + 2] = gray;
+                }
 
-                    // Convert to grayscale
-                    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+                // Step 2: Increase contrast (lottery tickets often have low contrast)
+                const contrast = 1.8;
+                const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
+                for (let i = 0; i < data.length; i += 4) {
+                    data[i] = Math.min(255, Math.max(0, factor * (data[i] - 128) + 128));
+                    data[i + 1] = data[i];
+                    data[i + 2] = data[i];
+                }
 
-                    // Increase contrast
-                    const contrast = 1.5;
-                    const factor = (259 * (contrast * 100 + 255)) / (255 * (259 - contrast * 100));
-                    const newGray = Math.min(255, Math.max(0, factor * (gray - 128) + 128));
+                // Step 3: Adaptive thresholding (binarization)
+                // Use Otsu's method approximation
+                const histogram = new Array(256).fill(0);
+                for (let i = 0; i < data.length; i += 4) {
+                    histogram[Math.floor(data[i])]++;
+                }
 
-                    // Binarization with adaptive threshold
-                    const threshold = 140;
-                    const binary = newGray > threshold ? 255 : 0;
+                // Find optimal threshold
+                let total = canvas.width * canvas.height;
+                let sum = 0;
+                for (let i = 0; i < 256; i++) sum += i * histogram[i];
 
-                    data[i] = binary;
-                    data[i + 1] = binary;
-                    data[i + 2] = binary;
+                let sumB = 0, wB = 0, wF = 0;
+                let maxVariance = 0, threshold = 128;
+
+                for (let t = 0; t < 256; t++) {
+                    wB += histogram[t];
+                    if (wB === 0) continue;
+                    wF = total - wB;
+                    if (wF === 0) break;
+
+                    sumB += t * histogram[t];
+                    const mB = sumB / wB;
+                    const mF = (sum - sumB) / wF;
+                    const variance = wB * wF * (mB - mF) * (mB - mF);
+
+                    if (variance > maxVariance) {
+                        maxVariance = variance;
+                        threshold = t;
+                    }
+                }
+
+                // Apply threshold
+                for (let i = 0; i < data.length; i += 4) {
+                    const binary = data[i] > threshold ? 255 : 0;
+                    data[i] = data[i + 1] = data[i + 2] = binary;
                 }
 
                 ctx.putImageData(imageData, 0, 0);
                 resolve(canvas.toDataURL('image/png'));
             };
+            img.onerror = () => resolve(imageSource);
             img.src = imageSource;
         });
     };
 
-    // Extract lottery-specific pattern
+    // Extract lottery-specific patterns from text
     const extractLotteryInfo = (text: string): { numbers: string[]; province?: string; date?: string } => {
-        // Normalize text
-        const normalized = text
-            .replace(/[oO]/g, '0')
-            .replace(/[lI]/g, '1')
+        // Character corrections for common OCR mistakes on lottery fonts
+        let normalized = text
+            .replace(/[oOоО]/g, '0')  // Latin and Cyrillic O
+            .replace(/[lIіІ|]/g, '1') // l, I, pipe
             .replace(/[zZ]/g, '2')
-            .replace(/[sS]/g, '5')
-            .replace(/[bB]/g, '8');
+            .replace(/[eE]/g, '6')    // Sometimes 6 looks like e
+            .replace(/[sS\$]/g, '5')
+            .replace(/[bB]/g, '8')
+            .replace(/[gG]/g, '9')
+            .replace(/[,\.]/g, '')    // Remove punctuation between numbers
+            .replace(/\s+/g, ' ');    // Normalize spaces
 
-        // Extract 2-6 digit numbers
+        // Extract 2-6 digit numbers (lottery numbers)
         const numberMatches = normalized.match(/\b\d{2,6}\b/g) || [];
-        const numbers = [...new Set(numberMatches.filter(n => n.length >= 2 && n.length <= 6))];
 
-        // Try to extract date (DD/MM/YYYY or DD-MM-YYYY patterns)
-        const dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+        // Also try to find numbers that might be split by spaces
+        const spacedNumbers = normalized.match(/\d[\d\s]{4,8}\d/g) || [];
+        const cleanedSpaced = spacedNumbers.map(n => n.replace(/\s/g, '')).filter(n => n.length >= 2 && n.length <= 6);
+
+        const allNumbers = [...numberMatches, ...cleanedSpaced];
+        const numbers = [...new Set(allNumbers.filter(n => n.length >= 2 && n.length <= 6))];
+
+        // Extract date patterns
+        const datePatterns = [
+            /(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/,  // DD/MM/YYYY
+            /ngày\s*(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/i,
+            /(\d{1,2})\s*tháng\s*(\d{1,2})\s*năm\s*(\d{2,4})/i,
+        ];
+
         let date: string | undefined;
-        if (dateMatch) {
-            const [, d, m, y] = dateMatch;
-            const year = y.length === 2 ? `20${y}` : y;
-            date = `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${year}`;
+        for (const pattern of datePatterns) {
+            const match = text.match(pattern);
+            if (match) {
+                const [, d, m, y] = match;
+                const year = y.length === 2 ? `20${y}` : y;
+                date = `${d.padStart(2, '0')}-${m.padStart(2, '0')}-${year}`;
+                break;
+            }
         }
 
-        // Try to extract province/dai
-        const provincePatterns: Record<string, string[]> = {
-            'tphcm': ['hồ chí minh', 'tp.hcm', 'tphcm', 'sài gòn', 'saigon', 'hcm'],
-            'dong-nai': ['đồng nai', 'dong nai'],
-            'binh-duong': ['bình dương', 'binh duong'],
-            'vung-tau': ['vũng tàu', 'vung tau', 'bà rịa'],
-            'can-tho': ['cần thơ', 'can tho'],
-            'da-nang': ['đà nẵng', 'da nang'],
-            'mien-bac': ['miền bắc', 'mien bac', 'hà nội', 'ha noi'],
-            'tien-giang': ['tiền giang', 'tien giang'],
-            'ben-tre': ['bến tre', 'ben tre'],
-            'long-an': ['long an'],
-            'dong-thap': ['đồng tháp', 'dong thap'],
-            'ca-mau': ['cà mau', 'ca mau'],
-            'an-giang': ['an giang'],
-            'kien-giang': ['kiên giang', 'kien giang'],
+        // Extract province from text
+        const provincePatterns: Record<string, RegExp> = {
+            'tphcm': /h[ồô]\s*ch[íi]\s*minh|tp\.?hcm|s[àa]i\s*g[òo]n|hcm/i,
+            'dong-nai': /[đd][ồo]ng\s*nai/i,
+            'binh-duong': /b[ìi]nh\s*d[ươ][oơ]ng/i,
+            'vung-tau': /v[ũu]ng\s*t[àa]u|b[àa]\s*r[ịi]a/i,
+            'can-tho': /c[ầa]n\s*th[ơo]/i,
+            'da-nang': /[đd][àa]\s*n[ẵa]ng/i,
+            'mien-bac': /mi[ềe]n\s*b[ắa]c|h[àa]\s*n[ộo]i/i,
+            'tien-giang': /ti[ềe]n\s*giang/i,
+            'ben-tre': /b[ếe]n\s*tre/i,
+            'long-an': /long\s*an/i,
+            'dong-thap': /[đd][ồo]ng\s*th[áa]p/i,
+            'ca-mau': /c[àa]\s*mau/i,
+            'an-giang': /an\s*giang/i,
+            'kien-giang': /ki[êe]n\s*giang/i,
+            'vinh-long': /v[ĩi]nh\s*long/i,
+            'tra-vinh': /tr[àa]\s*vinh/i,
+            'bac-lieu': /b[ạa]c\s*li[êe]u/i,
+            'soc-trang': /s[óo]c\s*tr[ăa]ng/i,
+            'hau-giang': /h[ậa]u\s*giang/i,
         };
 
         let province: string | undefined;
-        const lowerText = text.toLowerCase();
-        for (const [key, patterns] of Object.entries(provincePatterns)) {
-            for (const pattern of patterns) {
-                if (lowerText.includes(pattern)) {
-                    province = key;
-                    break;
-                }
+        for (const [key, pattern] of Object.entries(provincePatterns)) {
+            if (pattern.test(text)) {
+                province = key;
+                break;
             }
-            if (province) break;
         }
 
         return { numbers, province, date };
@@ -140,27 +196,32 @@ export function useOCR() {
                 });
             }
 
-            // Pre-process image for better recognition
+            // Step 1: Pre-process image
             setProgress(10);
             const processedImage = await preprocessImage(imageSrc as string);
+            setProgress(25);
 
-            // Create Tesseract worker with enhanced config
-            setProgress(20);
+            // Step 2: Create Tesseract worker with optimized settings for numbers
             const worker = await createWorker('vie+eng', 1, {
                 logger: (m) => {
                     if (m.status === 'recognizing text') {
-                        setProgress(20 + Math.round(m.progress * 70));
+                        setProgress(25 + Math.round(m.progress * 60));
                     }
                 },
+            });
+
+            // Configure Tesseract for better number recognition
+            await worker.setParameters({
+                tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵỷỹ /.-:',
             });
 
             // Recognize text
             const { data } = await worker.recognize(processedImage);
             await worker.terminate();
 
-            setProgress(95);
+            setProgress(90);
 
-            // Extract lottery-specific information
+            // Step 3: Extract lottery information
             const lotteryInfo = extractLotteryInfo(data.text);
 
             setProgress(100);
@@ -173,7 +234,7 @@ export function useOCR() {
                 date: lotteryInfo.date,
             };
         } catch (err) {
-            const message = err instanceof Error ? err.message : 'OCR processing failed';
+            const message = err instanceof Error ? err.message : 'Lỗi xử lý ảnh';
             setError(message);
             return null;
         } finally {
@@ -182,84 +243,8 @@ export function useOCR() {
         }
     }, []);
 
-    // Process with GPT-4 Vision for better accuracy (requires API key)
-    const processWithGPT4Vision = useCallback(async (imageBase64: string, apiKey: string): Promise<OCRResult | null> => {
-        setIsProcessing(true);
-        setError(null);
-
-        try {
-            const response = await fetch('https://api.openai.com/v1/chat/completions', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${apiKey}`,
-                },
-                body: JSON.stringify({
-                    model: 'gpt-4-vision-preview',
-                    messages: [
-                        {
-                            role: 'user',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: `Đây là hình chụp vé số Việt Nam. Hãy trích xuất các thông tin sau:
-1. Dãy số trên vé (6 chữ số)
-2. Ngày xổ (định dạng DD-MM-YYYY)
-3. Tên đài xổ số
-
-Trả lời theo định dạng JSON:
-{
-  "numbers": ["123456", "789012"],
-  "date": "01-01-2024",
-  "province": "tphcm"
-}
-
-Chỉ trả về JSON, không giải thích.`
-                                },
-                                {
-                                    type: 'image_url',
-                                    image_url: {
-                                        url: imageBase64.startsWith('data:') ? imageBase64 : `data:image/jpeg;base64,${imageBase64}`,
-                                    },
-                                },
-                            ],
-                        },
-                    ],
-                    max_tokens: 500,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error('GPT-4 Vision API failed');
-            }
-
-            const data = await response.json();
-            const content = data.choices?.[0]?.message?.content;
-
-            if (content) {
-                const parsed = JSON.parse(content);
-                return {
-                    text: content,
-                    numbers: parsed.numbers || [],
-                    confidence: 95,
-                    province: parsed.province,
-                    date: parsed.date,
-                };
-            }
-
-            return null;
-        } catch (err) {
-            const message = err instanceof Error ? err.message : 'GPT-4 Vision failed';
-            setError(message);
-            return null;
-        } finally {
-            setIsProcessing(false);
-        }
-    }, []);
-
     return {
         processImage,
-        processWithGPT4Vision,
         isProcessing,
         progress,
         error,
