@@ -1,14 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { kv } from '@vercel/kv';
+import Redis from 'ioredis';
 
 // Cache TTL: 30 days in seconds
 const CACHE_TTL = 30 * 24 * 60 * 60;
+
+// Redis client
+let redis: Redis | null = null;
+
+function getRedis(): Redis | null {
+    if (!process.env.REDIS_URL) {
+        return null;
+    }
+    if (!redis) {
+        redis = new Redis(process.env.REDIS_URL, {
+            maxRetriesPerRequest: 3,
+            lazyConnect: true,
+        });
+    }
+    return redis;
+}
 
 // API to prefetch and cache lottery results for the last 30 days
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get('days') || '30');
     const region = searchParams.get('region') || 'nam';
+
+    const redisClient = getRedis();
+    if (!redisClient) {
+        return NextResponse.json({
+            success: false,
+            error: 'REDIS_URL not configured'
+        }, { status: 500 });
+    }
 
     const results: Array<{ date: string; status: string; count: number }> = [];
     const proxyUrl = 'https://api.allorigins.win/raw?url=';
@@ -21,24 +45,26 @@ export async function GET(request: NextRequest) {
 
         try {
             // Check if already cached
-            const cached = await kv.get(cacheKey);
+            const cached = await redisClient.get(cacheKey);
             if (cached) {
-                results.push({ date: dateStr, status: 'cached', count: Object.keys(cached as object).length });
+                const parsedCache = JSON.parse(cached);
+                results.push({ date: dateStr, status: 'cached', count: Object.keys(parsedCache).length });
                 continue;
             }
 
             // Fetch and cache
             const data = await fetchLotteryForDate(dateStr, region, proxyUrl);
             if (Object.keys(data).length > 0) {
-                await kv.set(cacheKey, data, { ex: CACHE_TTL });
+                await redisClient.setex(cacheKey, CACHE_TTL, JSON.stringify(data));
                 results.push({ date: dateStr, status: 'fetched', count: Object.keys(data).length });
             } else {
                 results.push({ date: dateStr, status: 'no_data', count: 0 });
             }
 
             // Small delay to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 300));
         } catch (error) {
+            console.error(`Error for ${dateStr}:`, error);
             results.push({ date: dateStr, status: 'error', count: 0 });
         }
     }

@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { kv } from '@vercel/kv';
+import Redis from 'ioredis';
 
 // Cache TTL: 30 days in seconds
 const CACHE_TTL = 30 * 24 * 60 * 60;
 
-// Real lottery data API - fetches from multiple Vietnamese lottery sources with KV caching
+// Redis client (lazy initialization)
+let redis: Redis | null = null;
+
+function getRedis(): Redis | null {
+    if (!process.env.REDIS_URL) {
+        console.log('REDIS_URL not configured');
+        return null;
+    }
+    if (!redis) {
+        redis = new Redis(process.env.REDIS_URL, {
+            maxRetriesPerRequest: 3,
+            retryDelayOnFailover: 100,
+            lazyConnect: true,
+        });
+    }
+    return redis;
+}
+
+// Real lottery data API - fetches from multiple Vietnamese lottery sources with Redis caching
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || formatToday();
@@ -13,22 +31,24 @@ export async function GET(request: NextRequest) {
     const cacheKey = `lottery:${date}:${region}`;
 
     try {
-        // Step 1: Check KV cache first
-        let cached = null;
-        try {
-            cached = await kv.get(cacheKey);
-            if (cached) {
-                console.log(`Cache HIT: ${cacheKey}`);
-                return NextResponse.json({
-                    success: true,
-                    data: cached,
-                    date,
-                    source: 'cache'
-                });
+        const redisClient = getRedis();
+
+        // Step 1: Check Redis cache first
+        if (redisClient) {
+            try {
+                const cached = await redisClient.get(cacheKey);
+                if (cached) {
+                    console.log(`Cache HIT: ${cacheKey}`);
+                    return NextResponse.json({
+                        success: true,
+                        data: JSON.parse(cached),
+                        date,
+                        source: 'cache'
+                    });
+                }
+            } catch (redisError) {
+                console.log('Redis read error, fetching fresh data:', redisError);
             }
-        } catch (kvError) {
-            // KV not configured or error - continue to fetch
-            console.log('KV not available, fetching fresh data');
         }
 
         console.log(`Cache MISS: ${cacheKey}, fetching from sources...`);
@@ -36,13 +56,13 @@ export async function GET(request: NextRequest) {
         // Step 2: Fetch from sources
         const results = await fetchRealLotteryData(date, region);
 
-        // Step 3: Save to KV cache (only if we got results and KV is available)
-        if (Object.keys(results).length > 0) {
+        // Step 3: Save to Redis cache (only if we got results)
+        if (Object.keys(results).length > 0 && redisClient) {
             try {
-                await kv.set(cacheKey, results, { ex: CACHE_TTL });
+                await redisClient.setex(cacheKey, CACHE_TTL, JSON.stringify(results));
                 console.log(`Cached: ${cacheKey} for ${CACHE_TTL}s`);
-            } catch (kvError) {
-                console.log('Failed to cache result:', kvError);
+            } catch (redisError) {
+                console.log('Failed to cache result:', redisError);
             }
         }
 
@@ -72,7 +92,7 @@ async function fetchRealLotteryData(dateStr: string, region: string) {
         const regionPath = region === 'bac' ? 'mien-bac' : region === 'trung' ? 'mien-trung' : 'mien-nam';
         const url = `https://www.minhngoc.net.vn/ket-qua-xo-so/${regionPath}/${day}-${month}-${year}.html`;
         const response = await fetch(proxyUrl + encodeURIComponent(url), {
-            next: { revalidate: 300 } // Cache for 5 min at edge
+            next: { revalidate: 300 }
         });
 
         if (response.ok) {
