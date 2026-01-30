@@ -38,13 +38,79 @@ export default function Home() {
     }
   };
 
+  // Create ICS calendar file for reminder
+  const createCalendarReminder = (drawDate: string, numbers: string[], province: string) => {
+    const date = new Date(drawDate);
+    // Set time to 5PM (17:00)
+    date.setHours(17, 0, 0, 0);
+
+    const formatICSDate = (d: Date) => {
+      return d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    };
+
+    const endDate = new Date(date.getTime() + 30 * 60 * 1000); // 30 min duration
+    const provinceName = province || 'Miền Nam';
+
+    const icsContent = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Dò Vé Số//NONSGML v1.0//EN
+BEGIN:VEVENT
+UID:${Date.now()}@doveso.app
+DTSTAMP:${formatICSDate(new Date())}
+DTSTART:${formatICSDate(date)}
+DTEND:${formatICSDate(endDate)}
+SUMMARY:🎟️ Nhớ dò vé số!
+DESCRIPTION:Số vé: ${numbers.join(', ')}\\nĐài: ${provinceName}\\n\\nVào app Dò Vé Số để kiểm tra kết quả!
+LOCATION:https://veso.vercel.app
+BEGIN:VALARM
+TRIGGER:-PT0M
+ACTION:DISPLAY
+DESCRIPTION:🎟️ Đã đến giờ dò vé số!
+END:VALARM
+END:VEVENT
+END:VCALENDAR`;
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `do-ve-so-${drawDate}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handleCheckNumbers = async (data: { date: string; province: string; numbers: string[] }) => {
     setIsChecking(true);
     try {
       const date = new Date(data.date);
       const today = new Date();
-      const diffTime = today.getTime() - date.getTime();
+      today.setHours(0, 0, 0, 0);
+      const compareDate = new Date(date);
+      compareDate.setHours(0, 0, 0, 0);
+
+      const diffTime = today.getTime() - compareDate.getTime();
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // Check if draw date is in the future
+      if (compareDate > today) {
+        const daysUntil = Math.ceil((compareDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        const wantReminder = confirm(
+          `📅 Ngày xổ số chưa tới!\n\n` +
+          `Ngày mở thưởng: ${data.date}\n` +
+          `Còn ${daysUntil} ngày nữa\n\n` +
+          `Bạn có muốn tạo lịch nhắc dò số lúc 17:00 ngày ${data.date} không?`
+        );
+
+        if (wantReminder) {
+          createCalendarReminder(data.date, data.numbers, data.province);
+          alert('✅ Đã tải file lịch nhắc!\n\nMở file .ics để thêm vào Calendar của điện thoại.');
+        }
+
+        setIsChecking(false);
+        return;
+      }
 
       // Check if ticket is older than 30 days
       if (diffDays > 30) {
