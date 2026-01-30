@@ -42,6 +42,17 @@ export default function Home() {
     setIsChecking(true);
     try {
       const date = new Date(data.date);
+      const today = new Date();
+      const diffTime = today.getTime() - date.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+      // Check if ticket is older than 30 days
+      if (diffDays > 30) {
+        alert(`⚠️ Vé số đã hết hạn dò!\n\nNgày mở thưởng: ${data.date}\nĐã qua: ${diffDays} ngày\n\nTheo quy định, vé số chỉ có giá trị trong 30 ngày kể từ ngày mở thưởng.`);
+        setIsChecking(false);
+        return;
+      }
+
       const results = await fetchLotteryResults(date, data.province || undefined);
 
       const allResults: CheckResult[] = [];
