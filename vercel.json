@@ -1,0 +1,16 @@
+{
+    "crons": [
+        {
+            "path": "/api/lottery/prefetch?days=1&region=nam",
+            "schedule": "0 11 * * *"
+        },
+        {
+            "path": "/api/lottery/prefetch?days=1&region=trung",
+            "schedule": "5 11 * * *"
+        },
+        {
+            "path": "/api/lottery/prefetch?days=1&region=bac",
+            "schedule": "10 11 * * *"
+        }
+    ]
+}
