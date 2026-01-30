@@ -15,7 +15,6 @@ function getRedis(): Redis | null {
     if (!redis) {
         redis = new Redis(process.env.REDIS_URL, {
             maxRetriesPerRequest: 3,
-            retryDelayOnFailover: 100,
             lazyConnect: true,
         });
     }
