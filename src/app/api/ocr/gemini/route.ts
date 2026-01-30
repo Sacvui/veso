@@ -17,10 +17,10 @@ interface GeminiOCRResponse {
     modelUsed?: string;
 }
 
-// Models to try in order (fallback chain) - Only Gemini 2.0 models
+// Models to try in order (fallback chain)
 const MODELS_TO_TRY = [
+    'gemini-3-flash-preview',
     'gemini-2.0-flash',
-    'gemini-2.0-flash-lite',
 ];
 
 const PROMPT = `Bạn là chuyên gia nhận diện vé số Việt Nam. Hãy phân tích ảnh vé số này và trích xuất thông tin:
