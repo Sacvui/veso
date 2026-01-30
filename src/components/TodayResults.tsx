@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, Calendar, MapPin } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, Calendar, MapPin, ChevronDown } from 'lucide-react';
 import {
     fetchLotteryResults,
     prizeStructure,
@@ -44,7 +44,6 @@ export function TodayResults() {
     }, [currentDate, region]);
 
     const loadResults = async () => {
-        // Don't load results for future dates
         if (isFutureDate) {
             setResults({});
             setIsLoading(false);
@@ -61,7 +60,7 @@ export function TodayResults() {
         setIsLoading(false);
     };
 
-    // Get provinces for current region grouped by day
+    // Get provinces for current region
     const regionProvinces = Object.entries(provinces)
         .filter(([, p]) => p.region === region)
         .map(([key, p]) => ({ key, ...p }));
@@ -85,7 +84,7 @@ export function TodayResults() {
 
     const selectDate = (day: number) => {
         const newDate = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day);
-        if (newDate > today) return; // Don't allow future dates
+        if (newDate > today) return;
         setCurrentDate(newDate);
         setShowCalendar(false);
     };
@@ -121,11 +120,10 @@ export function TodayResults() {
 
     // Format date for display
     const formatDisplayDate = (date: Date) => {
-        const days = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+        const days = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
         const day = date.getDate().toString().padStart(2, '0');
         const month = (date.getMonth() + 1).toString().padStart(2, '0');
-        const year = date.getFullYear();
-        return `${days[date.getDay()]}, ${day}/${month}/${year}`;
+        return `${days[date.getDay()]}, ${day}/${month}/${date.getFullYear()}`;
     };
 
     // Filter results by selected province
@@ -139,198 +137,189 @@ export function TodayResults() {
     const prizeOrder = ['DB', 'G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8'];
 
     return (
-        <div className="glass-card p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                <span className="text-2xl">📊</span> Kết Quả Xổ Số
+        <div className="glass-card p-4 sm:p-6">
+            <h2 className="text-lg sm:text-xl font-semibold mb-4 flex items-center gap-2">
+                <span className="text-xl sm:text-2xl">📊</span> Kết Quả Xổ Số
             </h2>
 
-            {/* Date Picker with Calendar */}
-            <div className="relative mb-4" ref={calendarRef}>
-                <button
-                    onClick={() => setShowCalendar(!showCalendar)}
-                    className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500 text-left flex items-center justify-between hover:bg-white/10 transition"
-                >
-                    <div className="flex items-center gap-2">
-                        <Calendar size={18} className="text-purple-400" />
-                        <span className="font-medium">{formatDisplayDate(currentDate)}</span>
-                    </div>
-                    <ChevronRight size={18} className={`text-white/50 transition-transform ${showCalendar ? 'rotate-90' : ''}`} />
-                </button>
-
-                {/* Calendar Popup */}
-                {showCalendar && (
-                    <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-white/20 rounded-xl shadow-2xl z-50 p-4">
-                        {/* Month Navigation */}
-                        <div className="flex items-center justify-between mb-4">
-                            <button
-                                type="button"
-                                onClick={prevMonth}
-                                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition"
-                            >
-                                <ChevronLeft size={18} />
-                            </button>
-                            <span className="font-semibold text-white">
-                                {monthNames[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={nextMonth}
-                                className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition"
-                            >
-                                <ChevronRight size={18} />
-                            </button>
-                        </div>
-
-                        {/* Day Headers */}
-                        <div className="grid grid-cols-7 gap-1 mb-2">
-                            {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map(d => (
-                                <div key={d} className="text-center text-xs text-white/50 py-1">{d}</div>
-                            ))}
-                        </div>
-
-                        {/* Days Grid */}
-                        <div className="grid grid-cols-7 gap-1">
-                            {getDaysInMonth(calendarMonth).map((day, i) => (
-                                <div key={i} className="aspect-square">
-                                    {day && (
-                                        <button
-                                            type="button"
-                                            onClick={() => !isFuture(day) && selectDate(day)}
-                                            disabled={isFuture(day)}
-                                            className={`w-full h-full rounded-lg flex items-center justify-center text-sm transition-all
-                                                ${isFuture(day)
-                                                    ? 'text-white/20 cursor-not-allowed'
-                                                    : isSelected(day)
-                                                        ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold shadow-lg'
-                                                        : isToday(day)
-                                                            ? 'bg-purple-500/30 text-purple-300 font-medium'
-                                                            : 'text-white/80 hover:bg-white/10'
-                                                }`}
-                                        >
-                                            {day}
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Quick Select */}
-                        <div className="flex gap-2 mt-4 pt-4 border-t border-white/10">
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    setCurrentDate(new Date());
-                                    setCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
-                                    setShowCalendar(false);
-                                }}
-                                className="flex-1 py-2 bg-white/10 rounded-lg text-sm hover:bg-white/20 transition"
-                            >
-                                Hôm nay
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    const yesterday = new Date();
-                                    yesterday.setDate(yesterday.getDate() - 1);
-                                    setCurrentDate(yesterday);
-                                    setCalendarMonth(new Date(yesterday.getFullYear(), yesterday.getMonth(), 1));
-                                    setShowCalendar(false);
-                                }}
-                                className="flex-1 py-2 bg-white/10 rounded-lg text-sm hover:bg-white/20 transition"
-                            >
-                                Hôm qua
-                            </button>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Region Tabs */}
-            <div className="flex gap-1 p-1 bg-white/5 rounded-full mb-4">
-                {(['nam', 'trung', 'bac'] as Region[]).map((r) => (
+            {/* Mobile-optimized Controls */}
+            <div className="space-y-3 mb-4">
+                {/* Date Picker */}
+                <div className="relative" ref={calendarRef}>
                     <button
-                        key={r}
-                        onClick={() => {
-                            setRegion(r);
-                            setSelectedProvince('');
-                        }}
-                        className={`flex-1 py-2 px-4 rounded-full text-sm font-medium transition ${region === r
-                            ? 'btn-primary text-white'
-                            : 'text-white/60 hover:text-white'
-                            }`}
+                        onClick={() => setShowCalendar(!showCalendar)}
+                        className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:border-purple-500 text-left flex items-center justify-between hover:bg-white/10 transition active:scale-[0.98]"
                     >
-                        {r === 'nam' ? '🟢 Miền Nam' : r === 'trung' ? '🟡 Miền Trung' : '🔴 Miền Bắc'}
+                        <div className="flex items-center gap-2">
+                            <Calendar size={18} className="text-purple-400" />
+                            <span className="font-medium text-sm sm:text-base">{formatDisplayDate(currentDate)}</span>
+                        </div>
+                        <ChevronDown size={18} className={`text-white/50 transition-transform ${showCalendar ? 'rotate-180' : ''}`} />
                     </button>
-                ))}
-            </div>
 
-            {/* Province Filter */}
-            <div className="mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                    <MapPin size={14} className="text-purple-400" />
-                    <span className="text-sm text-white/70">Lọc theo tỉnh:</span>
+                    {/* Calendar Popup - Fixed for mobile */}
+                    {showCalendar && (
+                        <div className="absolute top-full left-0 right-0 mt-2 bg-gray-900 border border-white/20 rounded-xl shadow-2xl z-50 p-3 sm:p-4 max-h-[70vh] overflow-auto">
+                            {/* Month Navigation */}
+                            <div className="flex items-center justify-between mb-3">
+                                <button
+                                    type="button"
+                                    onClick={prevMonth}
+                                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition active:scale-95"
+                                >
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <span className="font-semibold text-white text-sm sm:text-base">
+                                    {monthNames[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={nextMonth}
+                                    className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center hover:bg-white/20 transition active:scale-95"
+                                >
+                                    <ChevronRight size={20} />
+                                </button>
+                            </div>
+
+                            {/* Day Headers */}
+                            <div className="grid grid-cols-7 gap-1 mb-2">
+                                {['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'].map(d => (
+                                    <div key={d} className="text-center text-xs text-white/50 py-1">{d}</div>
+                                ))}
+                            </div>
+
+                            {/* Days Grid - Larger touch targets */}
+                            <div className="grid grid-cols-7 gap-1">
+                                {getDaysInMonth(calendarMonth).map((day, i) => (
+                                    <div key={i} className="aspect-square">
+                                        {day && (
+                                            <button
+                                                type="button"
+                                                onClick={() => !isFuture(day) && selectDate(day)}
+                                                disabled={isFuture(day)}
+                                                className={`w-full h-full rounded-lg flex items-center justify-center text-sm font-medium transition-all active:scale-90
+                                                    ${isFuture(day)
+                                                        ? 'text-white/20 cursor-not-allowed'
+                                                        : isSelected(day)
+                                                            ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold shadow-lg'
+                                                            : isToday(day)
+                                                                ? 'bg-purple-500/30 text-purple-300'
+                                                                : 'text-white/80 hover:bg-white/10 active:bg-white/20'
+                                                    }`}
+                                            >
+                                                {day}
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Quick Select - Larger buttons for mobile */}
+                            <div className="flex gap-2 mt-4 pt-4 border-t border-white/10">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setCurrentDate(new Date());
+                                        setCalendarMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                                        setShowCalendar(false);
+                                    }}
+                                    className="flex-1 py-3 bg-purple-500/20 text-purple-300 rounded-xl text-sm font-medium hover:bg-purple-500/30 transition active:scale-95"
+                                >
+                                    Hôm nay
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const yesterday = new Date();
+                                        yesterday.setDate(yesterday.getDate() - 1);
+                                        setCurrentDate(yesterday);
+                                        setCalendarMonth(new Date(yesterday.getFullYear(), yesterday.getMonth(), 1));
+                                        setShowCalendar(false);
+                                    }}
+                                    className="flex-1 py-3 bg-white/10 rounded-xl text-sm font-medium hover:bg-white/20 transition active:scale-95"
+                                >
+                                    Hôm qua
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => setSelectedProvince('')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${!selectedProvince
-                                ? 'bg-purple-500 text-white'
-                                : 'bg-white/10 text-white/70 hover:bg-white/20'
-                            }`}
-                    >
-                        Tất cả
-                    </button>
-                    {regionProvinces.map((p) => (
-                        <button
-                            key={p.key}
-                            onClick={() => setSelectedProvince(p.key)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${selectedProvince === p.key
-                                    ? 'bg-purple-500 text-white'
-                                    : 'bg-white/10 text-white/70 hover:bg-white/20'
-                                }`}
+
+                {/* Region + Province in a row on mobile */}
+                <div className="grid grid-cols-2 gap-2">
+                    {/* Region Dropdown */}
+                    <div className="relative">
+                        <select
+                            value={region}
+                            onChange={(e) => {
+                                setRegion(e.target.value as Region);
+                                setSelectedProvince('');
+                            }}
+                            className="w-full px-3 py-3 bg-gray-800 border border-white/10 rounded-xl text-white text-sm font-medium focus:outline-none focus:border-purple-500 appearance-none cursor-pointer"
+                            style={{ backgroundColor: '#1f2937' }}
                         >
-                            {p.name}
-                        </button>
-                    ))}
+                            <option value="nam">🟢 Miền Nam</option>
+                            <option value="trung">🟡 Miền Trung</option>
+                            <option value="bac">🔴 Miền Bắc</option>
+                        </select>
+                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" />
+                    </div>
+
+                    {/* Province Dropdown */}
+                    <div className="relative">
+                        <select
+                            value={selectedProvince}
+                            onChange={(e) => setSelectedProvince(e.target.value)}
+                            className="w-full px-3 py-3 bg-gray-800 border border-white/10 rounded-xl text-white text-sm font-medium focus:outline-none focus:border-purple-500 appearance-none cursor-pointer"
+                            style={{ backgroundColor: '#1f2937' }}
+                        >
+                            <option value="">📍 Tất cả tỉnh</option>
+                            {regionProvinces.map((p) => (
+                                <option key={p.key} value={p.key}>{p.name}</option>
+                            ))}
+                        </select>
+                        <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-white/50 pointer-events-none" />
+                    </div>
                 </div>
             </div>
 
-            {/* Results Grid */}
+            {/* Results Grid - Mobile optimized */}
             {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-12 text-white/50">
-                    <Loader2 className="animate-spin mb-2" size={32} />
-                    <p>Đang tải kết quả...</p>
+                    <Loader2 className="animate-spin mb-2" size={28} />
+                    <p className="text-sm">Đang tải kết quả...</p>
                 </div>
             ) : filteredResults.length === 0 ? (
                 <div className="text-center py-12 text-white/50">
-                    <p>Không có kết quả xổ số cho ngày và miền đã chọn.</p>
+                    <span className="text-3xl block mb-2">📭</span>
+                    <p className="text-sm">Không có kết quả cho ngày này</p>
                 </div>
             ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                     {filteredResults.map(([key, data]) => (
-                        <div key={key} className="bg-white/5 rounded-xl p-4 border border-white/10">
-                            <h3 className="font-semibold text-purple-400 mb-3 pb-2 border-b border-white/10 flex items-center gap-2">
-                                <span className={`w-2 h-2 rounded-full ${data.region === 'bac' ? 'bg-red-500' :
+                        <div key={key} className="bg-white/5 rounded-xl p-3 sm:p-4 border border-white/10">
+                            <h3 className="font-semibold text-purple-400 mb-3 pb-2 border-b border-white/10 flex items-center gap-2 text-sm sm:text-base">
+                                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${data.region === 'bac' ? 'bg-red-500' :
                                         data.region === 'trung' ? 'bg-yellow-500' : 'bg-green-500'
                                     }`}></span>
-                                {data.name}
-                                <span className="text-xs text-white/40 font-normal ml-auto">{data.date}</span>
+                                <span className="truncate">{data.name}</span>
+                                <span className="text-xs text-white/40 font-normal ml-auto flex-shrink-0">{data.date}</span>
                             </h3>
-                            <div className="space-y-1">
+                            <div className="space-y-1.5">
                                 {prizeOrder
-                                    .filter((p) => data.prizes[p])
+                                    .filter((p) => data.prizes[p] && data.prizes[p].length > 0)
                                     .map((p) => (
-                                        <div key={p} className="flex items-start py-1 text-sm">
-                                            <span className="w-10 text-white/50 flex-shrink-0">
+                                        <div key={p} className="flex items-start py-1 text-xs sm:text-sm">
+                                            <span className="w-8 sm:w-10 text-white/50 flex-shrink-0 font-medium">
                                                 {prizeStructure[data.region]?.[p]?.label || p}
                                             </span>
-                                            <div className="flex flex-wrap gap-2">
+                                            <div className="flex flex-wrap gap-1.5 sm:gap-2">
                                                 {data.prizes[p].map((num, i) => (
                                                     <span
                                                         key={i}
-                                                        className={`font-mono px-2 py-0.5 rounded ${p === 'DB'
-                                                            ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-lg'
-                                                            : 'bg-white/10'
+                                                        className={`font-mono px-1.5 sm:px-2 py-0.5 rounded ${p === 'DB'
+                                                            ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white font-bold text-base sm:text-lg'
+                                                            : 'bg-white/10 text-xs sm:text-sm'
                                                             }`}
                                                     >
                                                         {num}
