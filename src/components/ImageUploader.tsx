@@ -1,8 +1,9 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Camera, Upload, X, Loader2, SwitchCamera, ZoomIn, FlashlightOff, Flashlight } from 'lucide-react';
+import { Camera, Upload, X, Loader2, SwitchCamera, FlashlightOff, Flashlight, Sparkles, Cpu } from 'lucide-react';
 import { useOCR } from '@/hooks/useOCR';
+import { useGeminiOCR } from '@/hooks/useGeminiOCR';
 
 interface OCRDetectionResult {
     numbers: string[];
@@ -21,13 +22,24 @@ export function ImageUploader({ onNumbersDetected }: ImageUploaderProps) {
     const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
     const [hasFlash, setHasFlash] = useState(false);
     const [flashOn, setFlashOn] = useState(false);
+    // OCR Mode: 'tesseract' (local) or 'gemini' (AI cloud)
+    const [ocrMode, setOcrMode] = useState<'tesseract' | 'gemini'>('gemini');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
-    const { processImage, isProcessing, progress, error } = useOCR();
+    // Tesseract OCR (local, offline)
+    const { processImage: processTesseract, isProcessing: isProcessingTesseract, progress: progressTesseract, error: errorTesseract } = useOCR();
+    // Gemini AI OCR (cloud, more accurate)
+    const { processImage: processGemini, isProcessing: isProcessingGemini, progress: progressGemini, error: errorGemini } = useGeminiOCR();
+
+    // Use the selected OCR mode
+    const processImage = ocrMode === 'gemini' ? processGemini : processTesseract;
+    const isProcessing = ocrMode === 'gemini' ? isProcessingGemini : isProcessingTesseract;
+    const progress = ocrMode === 'gemini' ? progressGemini : progressTesseract;
+    const error = ocrMode === 'gemini' ? errorGemini : errorTesseract;
 
     // Cleanup camera on unmount
     useEffect(() => {
@@ -175,6 +187,40 @@ export function ImageUploader({ onNumbersDetected }: ImageUploaderProps) {
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <span className="text-2xl">📸</span> Chụp hoặc Tải Vé Số
             </h2>
+
+            {/* OCR Mode Toggle */}
+            <div className="mb-4 p-3 bg-white/5 rounded-xl">
+                <div className="flex items-center justify-between">
+                    <span className="text-sm text-white/70">Phương thức quét:</span>
+                    <div className="flex bg-black/30 rounded-lg p-1 gap-1">
+                        <button
+                            onClick={() => setOcrMode('tesseract')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${ocrMode === 'tesseract'
+                                ? 'bg-blue-500 text-white shadow-lg'
+                                : 'text-white/60 hover:text-white/80'
+                                }`}
+                        >
+                            <Cpu size={14} />
+                            <span>Tesseract</span>
+                        </button>
+                        <button
+                            onClick={() => setOcrMode('gemini')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${ocrMode === 'gemini'
+                                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+                                : 'text-white/60 hover:text-white/80'
+                                }`}
+                        >
+                            <Sparkles size={14} />
+                            <span>Gemini AI</span>
+                        </button>
+                    </div>
+                </div>
+                <p className="text-xs text-white/50 mt-2">
+                    {ocrMode === 'gemini'
+                        ? '✨ AI thông minh - Độ chính xác cao, nhận diện tỉnh & ngày tự động'
+                        : '💻 Xử lý cục bộ - Hoạt động offline, nhanh hơn'}
+                </p>
+            </div>
 
             {/* Camera View */}
             {isCameraOpen ? (
@@ -330,9 +376,16 @@ export function ImageUploader({ onNumbersDetected }: ImageUploaderProps) {
 
             {/* Processing Status */}
             {isProcessing && (
-                <div className="mt-4 flex items-center justify-center gap-3 p-4 bg-purple-500/10 rounded-lg">
-                    <Loader2 className="animate-spin text-purple-400" size={20} />
-                    <span className="text-purple-300">Đang nhận diện số... {progress}%</span>
+                <div className={`mt-4 flex items-center justify-center gap-3 p-4 rounded-lg ${ocrMode === 'gemini'
+                        ? 'bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20'
+                        : 'bg-blue-500/10 border border-blue-500/20'
+                    }`}>
+                    <Loader2 className={`animate-spin ${ocrMode === 'gemini' ? 'text-purple-400' : 'text-blue-400'}`} size={20} />
+                    <span className={ocrMode === 'gemini' ? 'text-purple-300' : 'text-blue-300'}>
+                        {ocrMode === 'gemini'
+                            ? `🤖 Gemini AI đang phân tích... ${progress}%`
+                            : `💻 Tesseract đang nhận diện... ${progress}%`}
+                    </span>
                 </div>
             )}
 
